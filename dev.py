@@ -2,8 +2,8 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 
-st.set_page_config(page_title="ヘルスケアアプリ-従来研究", layout="wide")
-st.title("ヘルスケアアプリ-従来研究")
+st.set_page_config(page_title="ヘルスケアアプリ", layout="wide")
+st.title("ヘルスケアアプリ")
 st.write("常に最高のコンディション保持のために")
 
 # --- UI ---
@@ -80,9 +80,9 @@ df = pd.DataFrame(rows)
 df["行動"] = df["行動"].replace({"a1": "高強度", "a2": "中強度", "a3": "低強度"})
 
 col1, col2, col3 = st.columns(3)
-col1.metric("最終時点の s1 確率", f"{cur[0]:.3f}")
-col2.metric("平均 s1 確率（各期）", f"{df['s1'].mean():.3f}")
-col3.metric("最終残コスト L", f"{remain}")
+col1.metric("最終時点の確率", f"{cur[0]:.3f}")
+col2.metric("平均確率（各期）", f"{df['s1'].mean():.3f}")
+col3.metric("最終モチベーション", f"{remain}")
 
 st.subheader("トレーニングメニューのおすすめ")
 st.dataframe(df.style.format({"s1": "{:.3f}", "s2": "{:.3f}", "s3": "{:.3f}"}), use_container_width=True)
@@ -132,7 +132,7 @@ with col1:
     # トレーニングメニューのCSVダウンロード
     csv = download_df.to_csv(index=False, encoding='utf-8-sig')
     st.download_button(
-        label="📊 トレーニングメニューをCSVで保存",
+        label="トレーニングメニューをCSVで保存",
         data=csv,
         file_name=f"training_plan_{choice}_{T}days.csv",
         mime="text/csv"
@@ -143,7 +143,7 @@ with col2:
     import json
     settings_json = json.dumps(save_data, ensure_ascii=False, indent=2)
     st.download_button(
-        label="⚙️ 設定をJSONで保存",
+        label="設定をJSONで保存",
         data=settings_json,
         file_name=f"settings_{choice}_{T}days.json",
         mime="application/json"
@@ -183,5 +183,5 @@ st.subheader("保存用データプレビュー")
 st.write("**設定情報:**")
 st.json(save_data)
 
-st.write("**トレーニングメニュー:**")
+st.write("**トレーニングメニュー詳細**")
 st.dataframe(download_df, use_container_width=True)

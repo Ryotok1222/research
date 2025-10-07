@@ -2,13 +2,14 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 
-st.set_page_config(page_title="初心者専用ヘルスケアアプリ", layout="wide")
-st.title("ヘルスケアアプリ-本研究-初心者向け")
+st.set_page_config(page_title="ヘルスケアアプリ", layout="wide")
+st.title("ヘルスケアアプリ")
 st.write("常に最高のコンディション保持のために")
 
 # --- UI ---
 with st.form("sim_form"):
     choice = st.radio("あなたの状態は？", ["良い", "普通", "悪い"], horizontal=True)
+    skill_level = st.radio("今のあなたのトレーニングレベルは", ["初心者", "中級者", "上級者"], horizontal=True)
     T = st.radio("期間は？(最大30日間まで選択可能)", list(range(1, 31)), horizontal=True, index=11)  
     L = st.number_input("トレーニングに対するモチベーション", min_value=1, max_value=6, value=6, step=1)
     submitted = st.form_submit_button("計算する")
@@ -27,12 +28,26 @@ init_idx = {"良い": 0, "普通": 1, "悪い": 2}[choice]
 state_vec = np.zeros(3)
 state_vec[init_idx] = 1.0  # 例: 良い→[1,0,0]
 
-# 期間を3等分（余りは初心者期間に追加）
-base_period = T // 3
-remainder = T % 3
-beginner_period = base_period + remainder
-intermediate_period = base_period
-advanced_period = base_period
+# スキルレベルに応じて期間分割を決定
+if skill_level == "初心者":
+    # 3分割（余りは初心者期間に追加）
+    base_period = T // 3
+    remainder = T % 3
+    beginner_period = base_period + remainder
+    intermediate_period = base_period
+    advanced_period = base_period
+elif skill_level == "中級者":
+    # 2分割（余りは中級者期間に追加）
+    base_period = T // 2
+    remainder = T % 2
+    beginner_period = 0  # 初心者期間なし
+    intermediate_period = base_period + remainder
+    advanced_period = base_period
+else:  # 上級者
+    # 分割なし（ずっと上級者用）
+    beginner_period = 0
+    intermediate_period = 0
+    advanced_period = T
 # 遷移確率：Pr(sk | si, aj)
 # shape: (S, A, S)
 #初心者用
@@ -93,13 +108,21 @@ V = np.zeros((S, L + 1, T + 1))
 policy = np.full((S, L + 1, T), -1)  # 最適行動の記録
 # DP後ろから計算
 for t in reversed(range(1, T + 1)):
-    # 期間に応じてスキルレベルを決定
-    if t <= beginner_period:
-        P_t = P  # 初心者
-    elif t <= beginner_period + intermediate_period:
-        P_t = P2  # 中級者
-    else:
-        P_t = P3  # 上級者
+    # スキルレベルと期間に応じて遷移確率を決定
+    if skill_level == "初心者":
+        if t <= beginner_period:
+            P_t = P  # 初心者
+        elif t <= beginner_period + intermediate_period:
+            P_t = P2  # 中級者
+        else:
+            P_t = P3  # 上級者
+    elif skill_level == "中級者":
+        if t <= intermediate_period:
+            P_t = P2  # 中級者
+        else:
+            P_t = P3  # 上級者
+    else:  # 上級者
+        P_t = P3  # ずっと上級者
     for s in range(S):
         for l in range(L + 1):
             best = -1
@@ -124,9 +147,18 @@ initial_state_prob = V[init_idx][L][0] / T
 final_state_prob = V[init_idx][L][0]
 
 col1, col2, col3 = st.columns(3)
-col1.metric("最終時点の s1 確率", f"{final_state_prob:.3f}")
-col2.metric("平均 s1 確率（各期）", f"{initial_state_prob:.3f}")
-col3.metric("最終残コスト L", f"{L}")
+if choice == "良い":
+    col1.metric("最終時点の確率", f"{final_state_prob:.3f}")
+    col2.metric("平均確率（各期）", f"{initial_state_prob:.3f}")
+    col3.metric("最終モチベーション", f"{L}")
+elif choice == "普通":
+    col1.metric("最終時点の確率", f"{final_state_prob:.3f}")
+    col2.metric("平均確率（各期）", f"{initial_state_prob:.3f}")
+    col3.metric("最終モチベーション", f"{L}")
+else:  # 悪い
+    col1.metric("最終時点の確率", f"{final_state_prob:.3f}")
+    col2.metric("平均確率（各期）", f"{initial_state_prob:.3f}")
+    col3.metric("最終モチベーション", f"{L}")
 
 st.subheader("トレーニングメニューのおすすめ")
 
@@ -148,25 +180,33 @@ def generate_training_plan(initial_state, initial_cost, policy, V, costs, T, beg
             rows.append({
                 "期": t, 
                 "行動": "なし(予算不足)", 
-                "残りコスト(前)": current_cost,
+                "モチベーション": current_cost,
                 "s1": 0, "s2": 0, "s3": 0
             })
             break
         
-        # スキルレベルに応じて遷移確率を選択
-        if t <= beginner_period:
-            P_t = P  # 初心者
-        elif t <= beginner_period + intermediate_period:
-            P_t = P2  # 中級者
-        else:
-            P_t = P3  # 上級者
+        # スキルレベルと期間に応じて遷移確率を選択
+        if skill_level == "初心者":
+            if t <= beginner_period:
+                P_t = P  # 初心者
+            elif t <= beginner_period + intermediate_period:
+                P_t = P2  # 中級者
+            else:
+                P_t = P3  # 上級者
+        elif skill_level == "中級者":
+            if t <= intermediate_period:
+                P_t = P2  # 中級者
+            else:
+                P_t = P3  # 上級者
+        else:  # 上級者
+            P_t = P3  # ずっと上級者
         
         # 次の状態を計算
         next_state_probs = P_t[current_state, best_action, :]
         next_state = np.argmax(next_state_probs)  # 最も確率の高い状態を選択
         
-        # コストを更新
-        new_cost = current_cost - costs[best_action] if costs[best_action] > 0 else current_cost
+        # コストを更新（コスト0の場合は初期値Lに戻る）
+        new_cost = L if costs[best_action] == 0 else current_cost - costs[best_action]
         
         # 行動名を変換
         action_names = ["行動1", "行動2", "行動3", "行動4"]
@@ -175,7 +215,7 @@ def generate_training_plan(initial_state, initial_cost, policy, V, costs, T, beg
         rows.append({
             "期": t,
             "行動": action_name,
-            "残りコスト(前)": current_cost,
+            "モチベーション": current_cost,
             "s1": next_state_probs[0],
             "s2": next_state_probs[1], 
             "s3": next_state_probs[2]
@@ -186,10 +226,33 @@ def generate_training_plan(initial_state, initial_cost, policy, V, costs, T, beg
     
     return rows
 
+# スキルレベル判定関数
+def get_skill_level_for_period(period, skill_level, beginner_period, intermediate_period):
+    """期間に応じたスキルレベルを返す"""
+    if skill_level == "初心者":
+        if period <= beginner_period:
+            return "初心者"
+        elif period <= beginner_period + intermediate_period:
+            return "中級者"
+        else:
+            return "上級者"
+    elif skill_level == "中級者":
+        if period <= intermediate_period:
+            return "中級者"
+        else:
+            return "上級者"
+    else:  # 上級者
+        return "上級者"
+
 # トレーニングメニューを生成
 training_plan = generate_training_plan(init_idx, L, policy, V, costs, T, beginner_period, intermediate_period)
 df_plan = pd.DataFrame(training_plan)
-st.dataframe(df_plan.style.format({"s1": "{:.3f}", "s2": "{:.3f}", "s3": "{:.3f}"}), use_container_width=True)
+if choice == "良い":
+    st.dataframe(df_plan[["期", "行動", "モチベーション", "s1"]].style.format({"s1": "{:.3f}"}), use_container_width=True)
+elif choice == "普通":
+    st.dataframe(df_plan[["期", "行動", "モチベーション", "s2"]].style.format({"s2": "{:.3f}"}), use_container_width=True)
+else:  # 悪い
+    st.dataframe(df_plan[["期", "行動", "モチベーション", "s3"]].style.format({"s3": "{:.3f}"}), use_container_width=True)
 
 st.caption("※ 高度動的計画法により、スキルレベル別の最適行動を計算しています。")
 
@@ -200,11 +263,12 @@ st.subheader("結果保存")
 save_data = {
     "設定": {
         "初期状態": choice,
+        "トレーニングレベル": skill_level,
         "期間": T,
         "総コスト制限": L,
-        "初心者期間": f"1-{beginner_period}期",
-        "中級者期間": f"{beginner_period + 1}-{beginner_period + intermediate_period}期",
-        "上級者期間": f"{beginner_period + intermediate_period + 1}-{T}期"
+        "初心者期間": f"1-{beginner_period}期" if beginner_period > 0 else "なし",
+        "中級者期間": f"{beginner_period + 1}-{beginner_period + intermediate_period}期" if intermediate_period > 0 else "なし",
+        "上級者期間": f"{beginner_period + intermediate_period + 1}-{T}期" if advanced_period > 0 else "なし"
     },
     "結果": {
         "最終時点のs1確率": f"{final_state_prob:.3f}",
@@ -219,12 +283,11 @@ for i, row in enumerate(training_plan):
     download_data.append({
         "期": row["期"],
         "行動": row["行動"],
-        "残りコスト": row["残りコスト(前)"],
+        "モチベーション": row["モチベーション"],
         "s1確率": f"{row['s1']:.3f}",
         "s2確率": f"{row['s2']:.3f}",
         "s3確率": f"{row['s3']:.3f}",
-        "スキルレベル": "初心者" if row["期"] <= beginner_period else 
-                      "中級者" if row["期"] <= beginner_period + intermediate_period else "上級者"
+        "スキルレベル": get_skill_level_for_period(row["期"], skill_level, beginner_period, intermediate_period)
     })
 
 download_df = pd.DataFrame(download_data)
@@ -261,11 +324,12 @@ with col3:
 
 【設定】
 - 初期状態: {choice}
+- トレーニングレベル: {skill_level}
 - 期間: {T}日
 - 総コスト制限: {L}
-- 初心者期間: 1-{beginner_period}期
-- 中級者期間: {beginner_period + 1}-{beginner_period + intermediate_period}期
-- 上級者期間: {beginner_period + intermediate_period + 1}-{T}期
+- 初心者期間: {f"1-{beginner_period}期" if beginner_period > 0 else "なし"}
+- 中級者期間: {f"{beginner_period + 1}-{beginner_period + intermediate_period}期" if intermediate_period > 0 else "なし"}
+- 上級者期間: {f"{beginner_period + intermediate_period + 1}-{T}期" if advanced_period > 0 else "なし"}
 
 【結果】
 - 最終時点のs1確率: {final_state_prob:.3f}
@@ -287,10 +351,15 @@ st.subheader("保存用データプレビュー")
 st.write("**設定情報:**")
 st.json(save_data)
 
-st.write("**トレーニングメニュー:**")
+st.write("**トレーニングメニュー詳細**")
 st.dataframe(download_df, use_container_width=True)
 
+st.markdown("---")
+st.info("""
+**研究背景について**
 
+スポーツ選手は成長具合に応じてトレーニングの効果が変わってくるので、トレーニングモデルを変化させてモデル化をした
+""")
 
 
 
